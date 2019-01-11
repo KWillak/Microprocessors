@@ -8,7 +8,7 @@
 
 start
 	movlw 	0x0
-	movwf	TRISB, ACCESS	    ; Port C all outputs
+	movwf	TRISC, ACCESS	    ; Port C all outputs
 	bra 	test
 loop	movff 	0x05, PORTC
 	incf 	0x05, W, ACCESS
