@@ -8,15 +8,18 @@ int_hi	code	0x0008	; high vector, no low vector
 	retfie	FAST		; if not then return
 	movlw	0x00
 	movwf	LATB, ACCESS
-	incf	LATD		; increment PORTD
-	movlw	0x01
+	incf	LATE		; increment PORTD
+	incf	LATD
+	movlw	0x11
 	movwf	LATB, ACCESS
 	bcf	INTCON,TMR0IF	; clear interrupt flag
 	retfie	FAST		; fast return from interrupt
 
 main	code
-start	clrf	TRISD		; Set PORTD as all outputs
-	clrf	LATD		; Clear PORTD outputs
+start	clrf	TRISE		; Set PORTD as all outputs
+	clrf	LATE		; Clear PORTD outputs
+	clrf	TRISD
+	clrf	LATD
 	clrf	TRISB		; Set PORTB as all outputs
 	clrf	LATB		
 	movlw	b'10000111'	; Set timer0 to 16-bit, Fosc/4/256
