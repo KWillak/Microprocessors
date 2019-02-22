@@ -33,23 +33,23 @@ start   clrf	TRISE		; Set PORTD as all outputs
 ;	clrf	TRISC
 ;	clrf	TRISF
 			    ;now paddle1 intialisations		    
-	movlw   0xF0
+	movlw   0xFA
 	movwf	0xF0	;0x02
 	movlw	0xFE
 	movwf	0xF1	;0x00
-	movlw	0x60
+	movlw	0x55
 	movwf	0xF2	;0x01
-	movlw   0x90	
+	movlw   0x99	
 	movwf   0xF3	;0x03
 	
 			     ;now paddle2 intialisations
 	movlw   0x05
 	movwf	0xF5	;0x02
-	movlw	0x15
+	movlw	0x09
 	movwf	0xF6	;0x00
-	movlw	0x60	
+	movlw	0x55	
 	movwf	0xF7	;0x01
-	movlw   0x90	
+	movlw   0x99	
 	movwf   0xF8	;0x03
 		
 			    ;now ball initialisations
@@ -64,14 +64,23 @@ start   clrf	TRISE		; Set PORTD as all outputs
 			    ; now ball speed intialisations
 	movlw	0x04
 	movwf	ballvx
-	movlw	0x06
+	movlw	0x02
 	movwf	ballvy	
 			    ; now ball direction initialisations
 	movlw	0x06
 	movwf	0xE0
 	movlw	0x06
 	movwf	0xE1
-	
+			    ; paddle 1 size variable
+	movf	0xF8, 0
+	movwf	0xD3
+	movf	0xF7, 0
+	subwf	0xD3	    
+			    ; paddle 2 size variable	
+	movf	0xF3, 0
+	movwf	0xD4
+	movf	0xF2, 0
+	subwf	0xD4
 	
 	
 jump
@@ -142,7 +151,10 @@ keypadoutput
 	movf  0x45, W
 	andwf  0x44
 	movff  0x44, 0x48
-
+	
+inputactivation
+	call paddlemovement
+	bra pointchecks
 	bra jump
 	
 	
@@ -345,10 +357,100 @@ row2
 
 	return
 	
+paddlemovement
+	
+keypadpaddle1input
+	movlw	0x86	; ((value of keypad input when '1' pressed) -1)
+	cpfslt	0x48	; if keypad input (1) less than this value skip
+	bra paddle1moveup   ; move paddle up
+	movlw	0x01	; minimum value in 0x48 +1 
+	cpfslt	0x48	; if keypad input (1) isnt '1' and isnt nothing, must be move down
+	bra paddle1movedown ; move paddle down
+	
+keypadpaddle2input
+	movlw	0x86	; ((value of keypad input when '1' pressed) -1)
+	cpfslt	0x58	; if keypad input (2) less than this value skip
+	bra paddle2moveup   ; move paddle up
+	movlw	0x01	; minimum value in 0x48 +1 
+	cpfslt	0x58	; if keypad input (2) isnt '1' and isnt nothing, must be move down
+	bra paddle2movedown ; move paddle down	
+	return
+	
+paddle1moveup	
+
+	incf	0xF2;y_min
+	incf	0xF2;y_min
+	incf	0xF3;Y-max
+	incf	0xF3;Y-max
+	bra	keypadpaddle2input ; now check other keypad
+paddle1movedown
+	decf	0xF2;y_min
+	decf	0xF2;y_min
+	decf	0xF3;Y-max
+	decf	0xF3;Y-max
+	bra	keypadpaddle2input  ; now check other keypad
+	
+paddle2moveup
+	incf	0xF7	;y_min
+	incf	0xF7	;y_min
+	incf	0xF8	;y_max
+	incf	0xF8	;y_max
+	return	    ; both checks done return to drawing
+	
+paddle2movedown
+	decf	0xF7	;y_min
+	decf	0xF7	;y_min
+	decf	0xF8	;y_max
+	decf	0xF8	;y_max
+	return	    ; both checks done return to drawing	
+	
+	
+pointchecks
+	movlw	0x05	; far side of x boundary on left
+	cpfsgt	0xFA	; ball x_min
+	bra collideleft	; checks if ball hits paddle when near boundary
+	
+	movlw	0xFA	; far side of x boundary on right
+	cpfslt	0xFB	; ball x_max
+	bra collideright	; checks if ball hits paddle when near boundary
+	bra jump
+	
+collideright
+	movf	0xF2, 0	; paddle1 ymin
+	cpfsgt	0xFD	; ball ymax
+	bra point2	; gives player 1 a point if ball ymax<paddle ymin
+	movf	0xF3,0	; paddle1   ymax
+	cpfslt	0xFC	; ball ymin
+	bra point2	; gives player 1 a point if ball ymin>paddle ymax
+	
+	movf	0xF8, 0
+	movwf	0xD0	
+	movf	0xFD, 0
+	subwf	0xD0
+	
+		
 	
 	
 	
 	
+	
+	bra jump		; if not branched (i.e. collides with paddle) return
+	
+collideleft	
+	movf	0xF7, 0	; paddle2 ymin
+	cpfsgt	0xFD	; ball ymax
+	bra point1	; gives player 2 a point if ball ymax<paddle ymin
+	movf	0xF8,0	; paddle2 ymax
+	cpfslt	0xFC	; ball ymin
+	bra point1	; gives player 2 a point if ball ymin<paddle ymax
+	bra jump		; if not branched (i.e. collides with paddle) return
+
+point1
+	incf 0x91	; 0x91 and 0x92 are locations of player points
+	goto start	; restarts
+point2
+	incf 0x92	; 0x91 and 0x92 are locations of player points
+	goto start	; restarts	
 	
 	
 	
