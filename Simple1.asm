@@ -4,7 +4,9 @@
 	
 	code
 	org 0x0
-	
+
+    extern	UART_Setup, UART_Transmit_Message  ; external UART subroutines
+    extern	LCD_Setup, LCD_Write_Message, LCD_clear	    ; external LCD subroutines	
 	
 	org 0x100		    ; Main code starts here at address 0x100
 
@@ -17,10 +19,80 @@ y_max	    res 1   ; reserve 1 byte for temporary use
 ballvy	    res 1   ; reserve 1 byte for counting through nessagedelay_count res 1   ; reserve one byte for counter in the delay routine
 ballvx	    res 1 ;
 delay_count res 1   ; reserve one byte for counter in the delay routine	
-cyclecounter res 1
-
+myTable	    udata   0x700    ; reserve data anywhere in RAM (here at 0x700)
+myTable2    udata   0x500
+myArray	    res	    0x80    ; reserve 128 bytes for welcome message data
+myArray2    res	    0x80	    
+myTable3    udata   0x600    ; reserve data anywhere in RAM (here at 0x700)
+myTable4    udata   0x400
+myArray3    res	    0x80
+rst	code	0    ; reset vector	    
+	
+myTable2 data	    "0-0\n"
+	constant    myTable2_l=.4	; length of data
+		    	
+myTable data	    "Hold 1 to start\n"	; message, plus carriage return
+	constant    myTable_l=.16	; length of data
+	movlw	0x00
+	movwf	0x96	; records if player 2 won
+	movwf	0x95	; records if player 1 won
+	
+setup	
+	movlw	0x00	
+	cpfseq	0x95	   ; check for value signifying win
+	call	P2WIN
+	cpfseq	0x96	   ; check for value signifying win
+	call	P1WIN
+	movlw	0x00
+	movwf	0x96	; records if player 2 won
+	movwf	0x95	; records if player 1 won	
+	
+	bcf	EECON1, CFGS	; point to Flash program memory  
+	bsf	EECON1, EEPGD 	; access Flash program memory
+	call	UART_Setup	; setup UART
+	call	LCD_Setup	; setup LCD
+standby
+	lfsr	FSR0, myArray	; Load FSR0 with address in RAM	
+	movlw	upper(myTable)	; address of data in PM	
+	movwf	TBLPTRU		; load upper bits to TBLPTRU
+	movlw	high(myTable)	; address of data in PM
+	movwf	TBLPTRH		; load high byte to TBLPTRH
+	movlw	low(myTable)	; address of data in PM
+	movwf	TBLPTRL		; load low byte to TBLPTRL
+	movlw	myTable_l	; bytes to read
+	movwf 	0x29		; our counter register
+loop 	tblrd*+			; one byte from PM to TABLAT, increment TBLPRT
+	movff	TABLAT, POSTINC0; move data from TABLAT to (FSR0), inc FSR0
+	movff	FSR0, 0x61
+	decfsz	0x29		; count down to zero
+	bra	loop		; keep going until finished
+		
+	movlw	myTable_l-1	; output message to LCD (leave out "\n")
+	lfsr	FSR2, myArray
+	call	LCD_Write_Message
+	
+	movlw	myTable_l	; output message to UART
+	lfsr	FSR2, myArray
+	call	UART_Transmit_Message	
+	movlw	0x00
+	movwf	0x54		; loop over keyboard, waiting for a 1 to start the game
+	call	column1
+	movlw	0xF3
+	cpfsgt	0x54
+	goto	$-8
+	
+	call	LCD_clear
+			    ; now ball direction initialisations
+	movlw	0x06	    ; ball starts moving inplayer
+	
+	movwf	0xE0
+ 
 start1	code      ; only performed once, and everytime a point is scored
 
+	movlw	0x00
+	movwf	0x91
+	movwf	0x92
+	
 start   clrf	TRISE		; Set PORTD as all outputs
 	clrf	LATE		; Clear PORTD outputs
 	clrf	TRISD
@@ -30,81 +102,123 @@ start   clrf	TRISE		; Set PORTD as all outputs
 	bsf	PADCFG1,REPU,BANKED
 	clrf	LATC
 	clrf	LATJ 
-;	clrf	TRISC
-;	clrf	TRISF
+	clrf	TRISC
+
 			    ;now paddle1 intialisations		    
 	movlw   0xFA
-	movwf	0xF0	;0x02
+	movwf	0xF0	;x_min start value
 	movlw	0xFE
-	movwf	0xF1	;0x00
+	movwf	0xF1	;x_max start value
 	movlw	0x55
-	movwf	0xF2	;0x01
+	movwf	0xF2	;y_min start value
 	movlw   0x99	
-	movwf   0xF3	;0x03
+	movwf   0xF3	;y_max start value
 	
 			     ;now paddle2 intialisations
 	movlw   0x05
-	movwf	0xF5	;0x02
+	movwf	0xF5	;x_min start value
 	movlw	0x09
-	movwf	0xF6	;0x00
+	movwf	0xF6	;x_max start value
 	movlw	0x55	
-	movwf	0xF7	;0x01
+	movwf	0xF7	;y_min start value
 	movlw   0x99	
-	movwf   0xF8	;0x03
+	movwf   0xF8	;y_max start value
 		
 			    ;now ball initialisations
 	movlw   0x7D
-	movwf	0xFA	;0x02
+	movwf	0xFA	;x_min start value
 	movlw	0x83
-	movwf	0xFB	;0x00
+	movwf	0xFB	;x_max start value
 	movlw	0x7D	
-	movwf	0xFC	;0x01
+	movwf	0xFC	;y_min start value
 	movlw   0x83	
-	movwf   0xFD	;0x03
+	movwf   0xFD	;y_max start value
 			    ; now ball speed intialisations
-	movlw	0x04
+	movlw	0x05	    
 	movwf	ballvx
 	movlw	0x02
 	movwf	ballvy	
-			    ; now ball direction initialisations
-	movlw	0x06
-	movwf	0xE0
-	movlw	0x06
+
+	movlw	0x06	    ;ball start direction (5=left, 6=right)
 	movwf	0xE1
 			    ; paddle 1 size variable
-	movf	0xF8, 0
-	movwf	0xD3
+	movf	0xF8, 0	    ; transport the coordinates of paddle 1 to a 
+	movwf	0xD3	    ; different working register to not override
 	movf	0xF7, 0
 	subwf	0xD3	    
 			    ; paddle 2 size variable	
-	movf	0xF3, 0
-	movwf	0xD4
+	movf	0xF3, 0	    ; transport the coordinates of paddle 1 to a 
+	movwf	0xD4	    ; different working register to not override
 	movf	0xF2, 0
 	subwf	0xD4
 	
 	
-jump
-	movlw	0x02		;delays within drawing
-	movwf	0x55		;
+	call	LCD_clear
+			    ; printing the score
+	movlw	0x30	    ; offset for easy number printing (in asssemly ascii
+	movff	0x92, 0x93  ; numbers start at 0x30) 
+	addwf	0x93
+	movlw	0x30	    ; offset for easy number printing
+	movff	0x91, 0x94
+	addwf	0x94
+	
+	movlw	0x00		;putting the scores onto the storing array
+	lfsr	FSR2, myArray2
+	movff	0x93, PLUSW2
+	movlw	0x02
+	lfsr	FSR2, myArray2
+	movff	0x94, PLUSW2
+	
+	
+results
+	lfsr	FSR2, myArray2	; Load FSR0 with address in RAM	
+	movlw	upper(myTable2)	; address of data in PM	
+	movwf	TBLPTRU		; load upper bits to TBLPTRU
+	movlw	high(myTable2)	; address of data in PM
+	movwf	TBLPTRH		; load high byte to TBLPTRH
+	movlw	low(myTable2)	; address of data in PM
+	movwf	TBLPTRL		; load low byte to TBLPTRL
+	movlw	myTable2_l	; bytes to read
+	movwf 	0x29		; counter register
+resloop 	
+	tblrd*+			; one byte from PM to TABLAT, increment TBLPRT
+	movff	TABLAT, POSTINC0; move data from TABLAT to (FSR0), inc FSR0
+	
+	decfsz	0x29		; count down to zero
+	bra	resloop		; keep going until finished
+		
+	movlw	myTable2_l-1	; output message to LCD (leave out "\n")
+	lfsr	FSR2, myArray2
+	call	LCD_Write_Message
+	
+	movlw	myTable2_l	; output message to UART
+	lfsr	FSR2, myArray2
+	call	UART_Transmit_Message		
+	
+
+	
+	
+	
+	
+	
+jump         ;main loop
+	movlw	0x02	; delays within drawing
+	movwf	0x55	; need to be initialized at the start of every loop
 	movlw	0x02		  
 	movwf	0x56
 	movlw	0x02
-	movwf	0x57; end of delays within drawing
-		
+	movwf	0x57     ; end of delays within drawing
 		
 	
-	movlw   0x01
-	movwf   cyclecounter	;this works for some reason, dont touch
-	
-paddle1
+paddle1                 
 	movf	0xF0, 0 
-	movwf	x_min	;0x02
+	movwf	x_min	;stored in 0x02
 	movf	0xF1, 0 
-	movwf	x_max	;0x00
+	movwf	x_max	;stored in 0x00
 	movf	0xF2, 0 
-	movwf	y_min	;0x01
+	movwf	y_min	;stored in 0x01
 	movf	0xF3, 0 
-	movwf   y_max	;0x03
+	movwf   y_max	;stored in 0x03
 	call draw
 	decfsz	0x56
 	bra paddle1
@@ -112,54 +226,54 @@ paddle1
 	
 paddle2
 	movf	0xF5, 0 
-	movwf	x_min	;0x02
-	movf	0xF6, 0 
-	movwf	x_max	;0x00
+	movwf	x_min	;stored in 0x02
+	movf	0xF6, 0  
+	movwf	x_max	;stored in 0x00
 	movf	0xF7, 0 	
-	movwf	y_min	;0x01
+	movwf	y_min	;stored in 0x01
 	movf	0xF8, 0 
-	movwf   y_max	;0x03
+	movwf   y_max	;stored in 0x03
 	call draw
 	decfsz	0x57
 	bra paddle2
 
 ball
 	movf	0xFA, 0 
-	movwf	x_min	;0x02
+	movwf	x_min	;stored in 0x02
 	movf	0xFB, 0 
-	movwf	x_max	;0x00
+	movwf	x_max	;stored in 0x00
 	movf	0xFC, 0 	
-	movwf	y_min	;0x01
+	movwf	y_min	;stored in 0x01
 	movf	0xFD, 0 	
-	movwf   y_max	;0x03
+	movwf   y_max	;stored in 0x03
 	
 	call draw	
-	decfsz	0x55
+	decfsz	0x55   ; delay
 	bra ball
 	call ballmovement
-kepyadcheck
-	call  column1
-	call  column2
+keypadcheck
+	call  column1   ; to get keypad 1 result
+	call  column2	; to get keypad 1 result
 keypadoutput 
 
-	movf  0x55, W
-	andwf  0x54
+	movf  0x55, W	    ; adding the two outputs, column and row, to get one
+	andwf  0x54	    ; variable for each button
 	movff  0x54, 0x58
 	
 
 
-	movf  0x45, W
-	andwf  0x44
+	movf  0x45, W	    ; adding the two outputs, column and row, to get one
+	andwf  0x44	    ; variable for each button
 	movff  0x44, 0x48
 	
 inputactivation
-	call paddlemovement
-	bra pointchecks
-	bra jump
+	call paddlemovement	
+	bra pointchecks	    
+	bra jump	    
 	
 	
 ballmovement
-	movf	ballvx, 0
+	movf	ballvx, 0   ;
 	movwf	0x21
 	movf	ballvy, 0
 	movwf	0x20
@@ -188,44 +302,44 @@ ballymove
 	movlw	0x05
 	cpfsgt	0xE1
 	bra ydec
-yinc
+yinc			; increments the ball's ymax and ymin
 	incf    0xFC
 	incf	0xFD
-	decf	0x20
+	decf	0x20	
 	movlw	0x01
-	cpfslt	0x20
+	cpfslt	0x20	; loops over this as many times as to make ballvy
 	bra ballymove
-	bra ballxmove
-ydec	
+	bra ballxmove	; checks x
+ydec			; decrements the ball's ymax and ymin
 	decf    0xFC
 	decf	0xFD
 	decf	0x20
 	movlw	0x01
-	cpfslt	0x20
+	cpfslt	0x20	; loops over this as many times as to make ballvy
 	bra ballymove
-	bra ballxmove
+	bra ballxmove	; checks x
 	
 ballxmove
 	movlw	0x05
 	cpfsgt	0xE0
 	bra xdec	
-xinc	
+xinc			; increments the ball's xmax and xmin
 	
 	incf	0XFA
 	incf	0xFB
 	decf	0x21
 	movlw	0x01
-	cpfslt	0x21
+	cpfslt	0x21	; loops over this as many times as to make ballvx
 	bra ballxmove
-	bra finmove
-xdec	
+	bra finmove	   ; end movement
+xdec			; decrements the ball's xmax and xmin
 	decf    0xFA
 	decf	0xFB
 	decf	0x21
 	movlw	0x01
-	cpfslt	0x21
-	bra ballymove
-	bra finmove
+	cpfslt	0x21	; loops over this as many times as to make ballvx
+	bra ballxmove
+	bra finmove	; end movement
 	
 finmove	
 	
@@ -243,27 +357,27 @@ finmove
 	
 	
 draw
-	movff	y_max, 0x0A
-	movff	y_min, 0x0B
-	movff	x_max, 0x0C
-	movff	x_min, 0x0D
-yfall
-	movlw	0x00
-	movwf	LATB, ACCESS
-	decf	0x0A
-	movff	0x0A, PORTD
+	movff	y_max, 0x0A       ; Draw funciton works by creating each side of
+	movff	y_min, 0x0B	  ; each square seperately 
+    	movff	x_max, 0x0C	  ; Values are moved to new registers to not 
+	movff	x_min, 0x0D	  ; overide them
+yfall				  ; All four sides work by drawing repeated 
+	movlw	0x00		  ; points while incrementing for rise functions
+	movwf	LATB, ACCESS	  ; and decrementing for fall funtions 
+	decf	0x0A		  ; They use port B to send the information 
+	movff	0x0A, PORTD	  ; to the oscilloscope
 	movlw	0x01
 	movwf	LATB, ACCESS
+	call	delay2		  ; Delay necesssary to keep each point on for 
+	call	delay2		  ; longer, thus creating a brighter image 
 	call	delay2
 	call	delay2
-	call	delay2
-	call	delay2
-	movf	y_min, 0
-	cpfslt 	0x0A
-	bra yfall
-	
-xfall
-	movlw	0x00
+	movf	y_min, 0	  ; When the value reaches the end point 
+	cpfslt 	0x0A		  ; like here y_min for lowering y_max,
+	bra yfall		  ; the loop is stopped
+				  
+xfall				    ; same for x falling
+	movlw	0x00		   
 	movwf	LATB, ACCESS
 	decf	0x0C
 	movff	0x0C, PORTE
@@ -277,7 +391,7 @@ xfall
 	cpfslt 	0x0C
 	bra xfall
 	
-yrise
+yrise				; now with y rising
 	movlw	0x00
 	movwf	LATB, ACCESS
 	incf	0x0B
@@ -292,7 +406,7 @@ yrise
 	cpfsgt 	0x0B
 	bra yrise	
 
-xrise
+xrise				; now with x rising
 	movlw	0x00
 
 	movwf	LATB, ACCESS
@@ -314,16 +428,16 @@ xrise
 ;Keypad1
 	
 column1
-	movlw 0x0F
-	movwf  TRISJ, ACCESS 
-	call  delay2
+	movlw 0x0F		    ;basic keypad code, the port is first
+	movwf  TRISJ, ACCESS	    ;half-lowered then raised, which gives us 
+	call  delay2		    ;where it was pressed
 	movlw  0xFF
 	movwf  0x57, ACCESS
 	movff  PORTJ, 0x54
 	movff  0x57, PORTJ
     
-row1
-	movlw 0xF0
+row1					
+	movlw 0xF0		   ;same as prevous except opposite (checks rows instead of columns)
 	movwf  TRISJ, ACCESS
 	call  delay2
 	movlw  0xFF
@@ -331,13 +445,11 @@ row1
 	movff  PORTJ, 0x55
 	movff  0x56, PORTJ
 
-	;movff  PORTC, PORTF
-
 	return
 
 
-column2
-	movlw 0x0F
+column2				    ; same code but for keypad 2,
+	movlw 0x0F		    ; different registers and port
 	movwf  TRISC, ACCESS 
 	call  delay2
 	movlw  0xFF
@@ -358,12 +470,13 @@ row2
 	return
 	
 paddlemovement
-	
+
+
 keypadpaddle1input
-	movlw	0x86	; ((value of keypad input when '1' pressed) -1)
+	movlw	0x56	; ((value of keypad input when '1' pressed) -1)
 	cpfslt	0x48	; if keypad input (1) less than this value skip
 	bra paddle1moveup   ; move paddle up
-	movlw	0x01	; minimum value in 0x48 +1 
+	movlw	0x41	; minimum value in 0x48 +1 
 	cpfslt	0x48	; if keypad input (1) isnt '1' and isnt nothing, must be move down
 	bra paddle1movedown ; move paddle down
 	
@@ -377,13 +490,18 @@ keypadpaddle2input
 	return
 	
 paddle1moveup	
-
+	movlw	0xFD	;roofcheck
+	cpfslt	0xF3
+	bra	keypadpaddle2input
 	incf	0xF2;y_min
 	incf	0xF2;y_min
 	incf	0xF3;Y-max
 	incf	0xF3;Y-max
 	bra	keypadpaddle2input ; now check other keypad
 paddle1movedown
+	movlw	0x02	;floorcheck
+	cpfsgt	0xF2
+	bra	keypadpaddle2input
 	decf	0xF2;y_min
 	decf	0xF2;y_min
 	decf	0xF3;Y-max
@@ -391,6 +509,9 @@ paddle1movedown
 	bra	keypadpaddle2input  ; now check other keypad
 	
 paddle2moveup
+	movlw	0xFD	;roofcheck
+	cpfslt	0xF8
+	return
 	incf	0xF7	;y_min
 	incf	0xF7	;y_min
 	incf	0xF8	;y_max
@@ -398,6 +519,9 @@ paddle2moveup
 	return	    ; both checks done return to drawing
 	
 paddle2movedown
+	movlw	0x02	;roofcheck
+	cpfsgt	0xF7
+	return
 	decf	0xF7	;y_min
 	decf	0xF7	;y_min
 	decf	0xF8	;y_max
@@ -422,14 +546,24 @@ collideright
 	movf	0xF3,0	; paddle1   ymax
 	cpfslt	0xFC	; ball ymin
 	bra point2	; gives player 1 a point if ball ymin>paddle ymax
-	
-	movf	0xF8, 0
-	movwf	0xD0	
+			
+	movf	0xF3, 0	;now checking where the ball hits the paddle
+	movwf	0xD0	    
 	movf	0xFD, 0
-	subwf	0xD0
-	
-		
-	
+	subwf	0xD0	   ;distance between top of ball and top of paddle
+	movlw	0x0D
+	cpfsgt	0xD0
+	bra	vy2up
+	movlw	0x1B
+	cpfsgt	0xD0	    ; checks where on the paddle the ball hits
+	bra	vy1up	    ; changes vy based on this
+	movlw	0x29
+	cpfsgt	0xD0
+	bra	vy0
+	movlw	0x37
+	cpfsgt	0xD0
+	bra	vy1down	
+	bra	vy2down
 	
 	
 	
@@ -443,33 +577,47 @@ collideleft
 	movf	0xF8,0	; paddle2 ymax
 	cpfslt	0xFC	; ball ymin
 	bra point1	; gives player 2 a point if ball ymin<paddle ymax
+	
+	movf	0xF8, 0
+	movwf	0xD1	    
+	movf	0xFD, 0
+	subwf	0xD1	   ;distance between top of ball and top of paddle
+	movlw	0x0D
+	cpfsgt	0xD1
+	bra	vy2up
+	movlw	0x1B
+	cpfsgt	0xD1	    ; this checks where on the paddle the ball hits
+	bra	vy1up	    ; changes vy based on this
+	movlw	0x29
+	cpfsgt	0xD1
+	bra	vy0
+	movlw	0x37
+	cpfsgt	0xD1
+	bra	vy1down	
+	bra	vy2down
+	
 	bra jump		; if not branched (i.e. collides with paddle) return
 
 point1
-	incf 0x91	; 0x91 and 0x92 are locations of player points
+	movlw	0x06
+	movwf	0xE0
+	incf	0x91	; 0x91 and 0x92 are locations of player points
+	movlw	0x09
+	cpfsgt	0x91
 	goto start	; restarts
+	movlw	0x05
+	movwf	0x95	; records if player 1 won
+	goto setup
 point2
-	incf 0x92	; 0x91 and 0x92 are locations of player points
+	movlw	0x05
+	movwf	0xE0
+	incf	0x92	; 0x91 and 0x92 are locations of player points
+	movlw	0x09
+	cpfsgt	0x92
 	goto start	; restarts	
-	
-	
-	
-	
-;ballmove
-;	decfsz	cyclecounter
-;	goto	draw
-;	
-;
-;	incf    y_max
-;;	incf	y_min
-;	movlw	0xFA
-;	cpfslt	y_max
-;	goto	jump
-;
-;	nop
-;	bra	draw
-	
-	
+	movlw	0x05
+	movwf	0x96	; records if player 2 won
+	goto setup
 	
 	; a delay subroutine if you need one, times around loop in delay_count
 delay	decfsz	delay_count	; decrement until zero
@@ -484,11 +632,109 @@ indelay
 	decfsz	delay_count	; decrement until zero
 	bra indelay
 	return	
+	
+P1WIN
+	call	LCD_clear
+myTable3 data	    "PLAYER 1 WINS"
+	constant    myTable3_l=.14	; length of data
+	lfsr	FSR0, myArray3	; Load FSR0 with address in RAM	
+	movlw	upper(myTable3)	; address of data in PM	
+	movwf	TBLPTRU		; load upper bits to TBLPTRU
+	movlw	high(myTable3)	; address of data in PM
+	movwf	TBLPTRH		; load high byte to TBLPTRH
+	movlw	low(myTable3)	; address of data in PM
+	movwf	TBLPTRL		; load low byte to TBLPTRL
+	movlw	myTable3_l	; bytes to read
+	movwf 	0x29		; our counter register
+loop3 	tblrd*+			; one byte from PM to TABLAT, increment TBLPRT
+	movff	TABLAT, POSTINC0; move data from TABLAT to (FSR0), inc FSR0
+	movff	FSR0, 0x61
+	decfsz	0x29		; count down to zero
+	bra	loop3		; keep going until finished
+		
+	movlw	myTable3_l-1	; output message to LCD (leave out "\n")
+	lfsr	FSR2, myArray3
+	call	LCD_Write_Message
+	
+	movlw	myTable3_l	; output message to UART
+	lfsr	FSR2, myArray3
+	call	UART_Transmit_Message
+	movlw	0x00
+	movwf	0x54
+	call	column1
+	movlw	0xF3
+	cpfsgt	0x54
+	goto	$-8
+	return
+	
+P2WIN
+	call	LCD_clear	
+myTable4 data	    "PLAYER 2 WINS"
+	constant    myTable4_l=.14	; length of data
+	lfsr	FSR0, myArray3	; Load FSR0 with address in RAM	
+	movlw	upper(myTable4)	; address of data in PM	
+	movwf	TBLPTRU		; load upper bits to TBLPTRU
+	movlw	high(myTable4)	; address of data in PM
+	movwf	TBLPTRH		; load high byte to TBLPTRH
+	movlw	low(myTable4)	; address of data in PM
+	movwf	TBLPTRL		; load low byte to TBLPTRL
+	movlw	myTable4_l	; bytes to read
+	movwf 	0x29		; our counter register
+loop4 	tblrd*+			; one byte from PM to TABLAT, increment TBLPRT
+	movff	TABLAT, POSTINC0; move data from TABLAT to (FSR0), inc FSR0
+	movff	FSR0, 0x61
+	decfsz	0x29		; count down to zero
+	bra	loop4		; keep going until finished
+		
+	movlw	myTable4_l-1	; output message to LCD (leave out "\n")
+	lfsr	FSR2, myArray3
+	call	LCD_Write_Message
+	
+	movlw	myTable4_l	; output message to UART
+	lfsr	FSR2, myArray3
+	call	UART_Transmit_Message	
+	movlw	0x00
+	movwf	0x54
+	call	column1
+	movlw	0xF3
+	cpfsgt	0x54
+	goto	$-8
+	return	
+	
+	
+vy2up			    ; now a set of functions to change ball y movement
+	movlw	0x04
+	movwf	ballvy
+	movlw	0x06
+	movwf	0xE1
+	bra	jump	
+	
 
+vy1up
+	movlw	0x02
+	movwf	ballvy
+	movlw	0x06
+	movwf	0xE1
+	bra	jump
 	
+vy0
+	movlw	0x00
+	movwf	ballvy
+	bra	jump
 	
+vy1down
+	movlw	0x02
+	movwf	ballvy	
+	movlw	0x05
+	movwf	0xE1
+	bra	jump	
 	
-	
+vy2down
+	movlw	0x04
+	movwf	ballvy
+	movlw	0x05
+	movwf	0xE1
+	bra	jump		
 	end
 	
 ;collisions 
