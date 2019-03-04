@@ -1,7 +1,17 @@
 
 #include p18f87k22.inc
+;List of file registers used
+;paddle one coords, xmin F0, xmax F1, ymin F2, ymax F3
+;paddle two coords, xmin F5, xmax F6, ymin F7, ymax F8
+;paddle one coords, xmin FA, xmax FB, ymin FC, ymax FD
+;ball direction stored in, E0 for x and E1 for y.
+;Player points stored in 0x91 and 0x92
+;Keypad input store in 0x48, 0x58
+;LCD variables are assigned in the 0x2X range from 0x21 to 0x25. (see lab book for details)
+;Uart_counter at 0x27
+;difference between ball and paddle ymax stored in D1 for left and D0 for right 
+;Win values stored at 0x95 and 0x96
 
-	
 	code
 	org 0x0
 
@@ -209,7 +219,7 @@ jump         ;main loop
 	movlw	0x02
 	movwf	0x57     ; end of delays within drawing
 		
-	
+	; we now draw each of the objects, paddle1, paddle2 and ball
 paddle1                 
 	movf	0xF0, 0 
 	movwf	x_min	;stored in 0x02
@@ -220,13 +230,13 @@ paddle1
 	movf	0xF3, 0 
 	movwf   y_max	;stored in 0x03
 	call draw
-	decfsz	0x56
+	decfsz	0x56	;allows  for drawing multiple times if necessary
 	bra paddle1
 
 	
 paddle2
 	movf	0xF5, 0 
-	movwf	x_min	;stored in 0x02
+	movwf	x_min	;stored in 0x02		
 	movf	0xF6, 0  
 	movwf	x_max	;stored in 0x00
 	movf	0xF7, 0 	
@@ -253,7 +263,7 @@ ball
 	call ballmovement
 keypadcheck
 	call  column1   ; to get keypad 1 result
-	call  column2	; to get keypad 1 result
+	call  column2	; to get keypad 2 result
 keypadoutput 
 
 	movf  0x55, W	    ; adding the two outputs, column and row, to get one
@@ -274,9 +284,9 @@ inputactivation
 	
 ballmovement
 	movf	ballvx, 0   ;
-	movwf	0x21
+	movwf	0x21			; changeable ball velocity
 	movf	ballvy, 0
-	movwf	0x20
+	movwf	0x20			; changeable ball velocity
 ballcheck
 	movlw	0xFB
 	cpfslt	0xFB
@@ -343,7 +353,7 @@ xdec			; decrements the ball's xmax and xmin
 	
 finmove	
 	
-	movf	0xFA, 0 
+	movf	0xFA, 0 	; reupdates with new coordinates for the objects
 	movwf	x_min	;0x02
 	movf	0xFB, 0 
 	movwf	x_max	;0x00
@@ -447,7 +457,7 @@ row1
 
 	return
 
-
+;keypad 2
 column2				    ; same code but for keypad 2,
 	movlw 0x0F		    ; different registers and port
 	movwf  TRISC, ACCESS 
@@ -519,7 +529,7 @@ paddle2moveup
 	return	    ; both checks done return to drawing
 	
 paddle2movedown
-	movlw	0x02	;roofcheck
+	movlw	0x02	;floorcheck
 	cpfsgt	0xF7
 	return
 	decf	0xF7	;y_min
@@ -633,7 +643,7 @@ indelay
 	bra indelay
 	return	
 	
-P1WIN
+P1WIN		;displays winning message for player 1
 	call	LCD_clear
 myTable3 data	    "PLAYER 1 WINS"
 	constant    myTable3_l=.14	; length of data
@@ -667,7 +677,7 @@ loop3 	tblrd*+			; one byte from PM to TABLAT, increment TBLPRT
 	goto	$-8
 	return
 	
-P2WIN
+P2WIN		;displays winning message f or player 2
 	call	LCD_clear	
 myTable4 data	    "PLAYER 2 WINS"
 	constant    myTable4_l=.14	; length of data
@@ -710,8 +720,8 @@ vy2up			    ; now a set of functions to change ball y movement
 	bra	jump	
 	
 
-vy1up
-	movlw	0x02
+vy1up			
+	movlw	0x02	; only this value changes between functions, depends on where the ball hits the paddle
 	movwf	ballvy
 	movlw	0x06
 	movwf	0xE1
