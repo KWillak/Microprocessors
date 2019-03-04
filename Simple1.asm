@@ -737,15 +737,7 @@ vy2down
 	bra	jump		
 	end
 	
-;collisions 
-	
-;sides
-	
-;topbottom	
-;	org	0x18
-	
-	
-;	retfie
+
 	
 	
 	
